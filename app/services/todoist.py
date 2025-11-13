@@ -1,8 +1,11 @@
 from datetime import datetime, timezone
+import logging
 from typing import List, Optional
 
 import httpx
 
+
+logger = logging.getLogger(__name__)
 
 def _parse_datetime(value: str) -> Optional[datetime]:
     value = value.replace("Z", "+00:00")
@@ -35,12 +38,14 @@ class TodoistClient:
 
     def __init__(self, token: str):
         self._token = token
+        logger.debug("TodoistClient initialized")
 
     async def fetch_tasks(self) -> List[TodoistTask]:
         headers = {
             "Authorization": f"Bearer {self._token}",
         }
         async with httpx.AsyncClient(timeout=10.0) as client:
+            logger.debug("Requesting tasks from Todoist API")
             response = await client.get(self.API_URL, headers=headers)
             response.raise_for_status()
             data = response.json()
@@ -60,4 +65,5 @@ class TodoistClient:
                     due_datetime=due_datetime,
                 )
             )
+        logger.info("Fetched %d tasks from Todoist", len(tasks))
         return tasks

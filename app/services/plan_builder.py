@@ -2,9 +2,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import logging
 from typing import Iterable, List, Optional
 
 from .llm import HuggingFaceLLMClient
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -37,6 +41,8 @@ class PlanBuilder:
                     item_type="event",
                 )
             )
+        events_count = len(items)
+        logger.debug("Prepared %d events for plan", events_count)
         for task in tasks:
             items.append(
                 PlanSourceItem(
@@ -46,8 +52,12 @@ class PlanBuilder:
                     item_type="task",
                 )
             )
+        tasks_count = len(items) - events_count
+        logger.debug("Prepared %d tasks for plan", tasks_count)
+        logger.debug("Total items aggregated for plan: %d", len(items))
 
         tzinfo = self._detect_timezone(items, fallback=now.tzinfo or timezone.utc)
+        logger.debug("Detected timezone for plan generation: %s", tzinfo)
         prompt = self._build_prompt(
             now=now,
             timezone_info=tzinfo,
@@ -55,8 +65,10 @@ class PlanBuilder:
             events=[item for item in items if item.item_type == "event"],
             instructions=instructions,
         )
+        logger.debug("Prompt constructed for plan generation (length=%d)", len(prompt))
 
         plan_text = await self._llm_client.generate(prompt)
+        logger.debug("Plan text generated (length=%d)", len(plan_text))
         return plan_text
 
     async def revise_plan(
@@ -83,14 +95,19 @@ class PlanBuilder:
 Верни только обновлённое расписание без дополнительных пояснений.
 """
 
-        revised_plan = await self._llm_client.generate(prompt.strip())
+        prepared_prompt = prompt.strip()
+        logger.debug("Prompt constructed for plan revision (length=%d)", len(prepared_prompt))
+        revised_plan = await self._llm_client.generate(prepared_prompt)
+        logger.debug("Revised plan generated (length=%d)", len(revised_plan))
         return revised_plan
 
     def _detect_timezone(self, items: Iterable[PlanSourceItem], fallback: timezone) -> timezone:
         for item in items:
             if item.start and item.start.tzinfo:
+                logger.debug("Timezone detected from item start: %s", item.start.tzinfo)
                 return item.start.tzinfo
             if item.end and item.end.tzinfo:
+                logger.debug("Timezone detected from item end: %s", item.end.tzinfo)
                 return item.end.tzinfo
         return fallback
 

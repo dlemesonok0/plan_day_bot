@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 from typing import Optional
+import logging
 
 import httpx
 
+
+logger = logging.getLogger(__name__)
 
 class HuggingFaceLLMClient:
     """Client for calling Hugging Face Inference API models."""
@@ -13,6 +16,7 @@ class HuggingFaceLLMClient:
         self.model = model
         self.timeout = timeout
         self._url = f"https://api-inference.huggingface.co/models/{model}"
+        logger.debug("HuggingFaceLLMClient initialized for model=%s", model)
 
     async def generate(
         self,
@@ -33,6 +37,9 @@ class HuggingFaceLLMClient:
             },
         }
         async with httpx.AsyncClient(timeout=self.timeout) as client:
+            logger.debug(
+                "Sending request to Hugging Face Inference API (model=%s)", self.model
+            )
             response = await client.post(self._url, headers=headers, json=payload)
             response.raise_for_status()
             data = response.json()
@@ -46,4 +53,7 @@ class HuggingFaceLLMClient:
 
         if not generated:
             raise ValueError("Empty response from Hugging Face Inference API")
+        logger.debug(
+            "Received response from Hugging Face Inference API (length=%d)", len(generated)
+        )
         return generated.strip()
