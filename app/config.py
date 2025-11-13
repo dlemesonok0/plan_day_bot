@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     google_calendar_id: str = Field(..., env="GOOGLE_CALENDAR_ID")
     huggingface_api_token: str = Field(..., env="HUGGINGFACE_API_TOKEN")
     huggingface_model: str = Field(
-        default="mistralai/Mistral-7B-Instruct-v0.2",
+        default="mistralai/Mistral-7B-Instruct-v0.3",
         env="HUGGINGFACE_MODEL",
     )
 

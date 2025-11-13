@@ -41,8 +41,21 @@ class HuggingFaceLLMClient:
                 "Sending request to Hugging Face Inference API (model=%s)", self.model
             )
             response = await client.post(self._url, headers=headers, json=payload)
+
+        try:
             response.raise_for_status()
-            data = response.json()
+        except httpx.HTTPStatusError as exc:
+            status_code = exc.response.status_code
+            if status_code == 410:
+                raise ValueError(
+                    (
+                        f"Модель Hugging Face '{self.model}' более недоступна. "
+                        "Обновите переменную окружения HUGGINGFACE_MODEL."
+                    )
+                ) from exc
+            raise
+
+        data = response.json()
 
         generated: Optional[str] = None
         if isinstance(data, list):

@@ -24,7 +24,7 @@ cp .env.example .env
 - `GOOGLE_SERVICE_ACCOUNT_INFO` — JSON c сервисным аккаунтом Google (одной строкой). Дайте сервисному аккаунту доступ к каждому календарю, который нужно учитывать в расписании.
 - `GOOGLE_CALENDAR_ID` — идентификатор одного или нескольких календарей (например, `primary` или `primary,team@example.com`).
 - `HUGGINGFACE_API_TOKEN` — токен доступа к Hugging Face Inference API.
-- `HUGGINGFACE_MODEL` — (необязательно) имя модели на Hugging Face, по умолчанию используется бесплатная `mistralai/Mistral-7B-Instruct-v0.2`.
+- `HUGGINGFACE_MODEL` — (необязательно) имя модели на Hugging Face, по умолчанию используется бесплатная `mistralai/Mistral-7B-Instruct-v0.3`.
 
 ### Где взять значения для `.env`
 
