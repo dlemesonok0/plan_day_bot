@@ -1,3 +1,4 @@
+import asyncio
 import json
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Optional
@@ -15,6 +16,31 @@ router = APIRouter()
 
 USER_INSTRUCTIONS: Dict[int, str] = {}
 USER_LAST_PLANS: Dict[int, str] = {}
+
+
+async def poll_updates(settings: Settings) -> None:
+    offset: Optional[int] = None
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        while True:
+            try:
+                response = await client.get(
+                    f"https://api.telegram.org/bot{settings.telegram_bot_token}/getUpdates",
+                    params={"timeout": 30, "offset": offset},
+                )
+                response.raise_for_status()
+            except httpx.HTTPError:
+                await asyncio.sleep(5)
+                continue
+
+            updates = response.json().get("result", [])
+            for update in updates:
+                update_id = update.get("update_id")
+                if update_id is not None:
+                    offset = update_id + 1
+
+                message = update.get("message")
+                if message:
+                    await dispatch_message(message, settings)
 
 
 async def send_message(token: str, chat_id: int, text: str) -> None:
