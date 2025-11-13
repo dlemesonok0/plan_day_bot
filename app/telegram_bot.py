@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Optional
 
@@ -12,6 +13,9 @@ from .services.llm import HuggingFaceLLMClient
 from .services.plan_builder import PlanBuilder
 from .services.todoist import TodoistClient
 
+
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
 
 USER_INSTRUCTIONS: Dict[int, str] = {}
@@ -20,6 +24,7 @@ USER_LAST_PLANS: Dict[int, str] = {}
 
 async def poll_updates(settings: Settings) -> None:
     offset: Optional[int] = None
+    logger.info("Starting Telegram updates polling loop")
     async with httpx.AsyncClient(timeout=30.0) as client:
         while True:
             try:
@@ -28,18 +33,27 @@ async def poll_updates(settings: Settings) -> None:
                     params={"timeout": 30, "offset": offset},
                 )
                 response.raise_for_status()
-            except httpx.HTTPError:
+            except httpx.HTTPError as exc:
+                logger.warning("Error while polling Telegram updates: %s", exc)
                 await asyncio.sleep(5)
                 continue
 
             updates = response.json().get("result", [])
+            if updates:
+                logger.debug("Received %d updates from Telegram", len(updates))
             for update in updates:
                 update_id = update.get("update_id")
                 if update_id is not None:
                     offset = update_id + 1
+                    logger.debug("Updated polling offset to %s", offset)
 
                 message = update.get("message")
                 if message:
+                    logger.debug(
+                        "Dispatching message from chat_id=%s, user_id=%s", 
+                        message.get("chat", {}).get("id"),
+                        message.get("from", {}).get("id"),
+                    )
                     await dispatch_message(message, settings)
 
 
@@ -49,15 +63,18 @@ async def send_message(token: str, chat_id: int, text: str) -> None:
     async with httpx.AsyncClient(timeout=10.0) as client:
         response = await client.post(url, json=payload)
         response.raise_for_status()
+    logger.debug("Message sent to chat_id=%s", chat_id)
 
 
 def parse_command(message: dict) -> tuple[str, Optional[str]]:
     text = message.get("text", "")
     if not text.startswith("/"):
+        logger.debug("Message does not contain a command: %s", text)
         return "", None
     parts = text.split(maxsplit=1)
     command = parts[0].lower()
     args = parts[1] if len(parts) > 1 else None
+    logger.debug("Parsed command=%s args=%s", command, args)
     return command, args
 
 
@@ -70,7 +87,9 @@ async def handle_plan_command(
     user_id = message["from"]["id"]
 
     todoist_client = TodoistClient(settings.todoist_api_token)
+    logger.info("Handling /plan command for user_id=%s", user_id)
     tasks = [task.to_plan_item() for task in await todoist_client.fetch_tasks()]
+    logger.debug("Fetched %d tasks from Todoist", len(tasks))
 
     service_account_info = settings.google_service_account_info
     if isinstance(service_account_info, str):
@@ -86,6 +105,7 @@ async def handle_plan_command(
         event.to_plan_item()
         for event in calendar_client.fetch_events(now, now + timedelta(days=1))
     ]
+    logger.debug("Fetched %d events from Google Calendar", len(events))
 
     instructions = USER_INSTRUCTIONS.get(user_id)
     if args:
@@ -104,8 +124,10 @@ async def handle_plan_command(
             instructions=instructions,
         )
         USER_LAST_PLANS[user_id] = plan_text
+        logger.info("Plan generated for user_id=%s", user_id)
         return plan_text
     except (httpx.HTTPError, ValueError) as exc:
+        logger.error("Failed to generate plan for user_id=%s: %s", user_id, exc)
         return "Не удалось построить расписание с помощью модели: {0}. Попробуйте еще раз позже.".format(
             str(exc)
         )
@@ -115,8 +137,10 @@ async def handle_set_instructions_command(*, message: dict, args: Optional[str])
     user_id = message["from"]["id"]
     if not args:
         USER_INSTRUCTIONS.pop(user_id, None)
+        logger.info("Instructions cleared for user_id=%s", user_id)
         return "Инструкции удалены."
     USER_INSTRUCTIONS[user_id] = args
+    logger.info("Instructions updated for user_id=%s", user_id)
     return "Инструкции сохранены."
 
 
@@ -125,10 +149,12 @@ async def handle_adjust_plan_command(
 ) -> str:
     user_id = message["from"]["id"]
     if not args:
+        logger.debug("Adjust plan command without arguments for user_id=%s", user_id)
         return "Опишите, какие правки нужно внести в расписание."
 
     previous_plan = USER_LAST_PLANS.get(user_id)
     if not previous_plan:
+        logger.debug("Adjust plan requested without existing plan for user_id=%s", user_id)
         return "Сначала запросите план командой /plan, а затем повторите попытку."
 
     llm_client = HuggingFaceLLMClient(
@@ -145,8 +171,10 @@ async def handle_adjust_plan_command(
             instructions=instructions,
         )
         USER_LAST_PLANS[user_id] = updated_plan
+        logger.info("Plan adjusted for user_id=%s", user_id)
         return updated_plan
     except (httpx.HTTPError, ValueError) as exc:
+        logger.error("Failed to adjust plan for user_id=%s: %s", user_id, exc)
         return "Не удалось применить правки с помощью модели: {0}. Попробуйте еще раз позже.".format(
             str(exc)
         )
@@ -166,6 +194,7 @@ async def dispatch_message(message: dict, settings: Settings) -> None:
         response = await handle_adjust_plan_command(message=message, args=args, settings=settings)
         await send_message(settings.telegram_bot_token, chat_id, response)
     elif command == "/start":
+        logger.info("Handling /start command for chat_id=%s", chat_id)
         await send_message(
             settings.telegram_bot_token,
             chat_id,
@@ -174,6 +203,7 @@ async def dispatch_message(message: dict, settings: Settings) -> None:
             " а /adjust_plan помогает внести правки в уже составленное расписание.",
         )
     else:
+        logger.debug("Unknown command received: %s", command)
         await send_message(
             settings.telegram_bot_token,
             chat_id,
@@ -188,7 +218,11 @@ async def telegram_webhook(
 ):
     message = payload.get("message")
     if not message:
+        logger.warning("Webhook called without message in payload")
         raise HTTPException(status_code=400, detail="Invalid payload")
 
+    logger.debug(
+        "Webhook received message for chat_id=%s", message.get("chat", {}).get("id")
+    )
     await dispatch_message(message, settings)
     return {"status": "ok"}

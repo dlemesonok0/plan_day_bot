@@ -1,9 +1,13 @@
 from datetime import datetime, timezone
+import logging
 from typing import Iterable, List
 
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
+
+
+logger = logging.getLogger(__name__)
 
 
 def _parse_datetime(value: str) -> datetime:
@@ -33,14 +37,22 @@ class CalendarEvent:
 
 class GoogleCalendarClient:
     def __init__(self, *, service_account_info, calendar_ids: Iterable[str]):
+        # Convert calendar_ids iterable to list once to avoid exhausting generators
+        calendar_ids_list = [calendar_id for calendar_id in calendar_ids if calendar_id]
+        logger.debug(
+            "Initializing GoogleCalendarClient for %d calendars", len(calendar_ids_list)
+        )
         credentials = service_account.Credentials.from_service_account_info(
             service_account_info,
             scopes=["https://www.googleapis.com/auth/calendar.readonly"],
         )
         self.service = build("calendar", "v3", credentials=credentials, cache_discovery=False)
-        self.calendar_ids = [calendar_id for calendar_id in calendar_ids if calendar_id]
+        self.calendar_ids = calendar_ids_list
         if not self.calendar_ids:
             raise ValueError("At least one Google Calendar ID must be configured")
+        logger.info(
+            "GoogleCalendarClient initialized for %d calendars", len(self.calendar_ids)
+        )
 
     def fetch_events(self, time_min: datetime, time_max: datetime) -> List[CalendarEvent]:
         events: List[CalendarEvent] = []
@@ -58,6 +70,9 @@ class GoogleCalendarClient:
                     .execute()
                 )
             except HttpError as error:
+                logger.warning(
+                    "Failed to fetch events for calendar %s: %s", calendar_id, error
+                )
                 if error.resp.status == 404:
                     # Skip calendars that are not found or inaccessible instead of
                     # propagating the error and crashing the bot.
@@ -84,4 +99,9 @@ class GoogleCalendarClient:
                         end=end,
                     )
                 )
-        return sorted(events, key=lambda event: event.start)
+            logger.debug(
+                "Fetched %d events from calendar %s", len(events_result.get("items", [])), calendar_id
+            )
+        sorted_events = sorted(events, key=lambda event: event.start)
+        logger.info("Fetched %d total events from Google Calendar", len(sorted_events))
+        return sorted_events
