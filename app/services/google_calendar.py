@@ -3,6 +3,7 @@ from typing import Iterable, List
 
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
 
 
 def _parse_datetime(value: str) -> datetime:
@@ -44,17 +45,24 @@ class GoogleCalendarClient:
     def fetch_events(self, time_min: datetime, time_max: datetime) -> List[CalendarEvent]:
         events: List[CalendarEvent] = []
         for calendar_id in self.calendar_ids:
-            events_result = (
-                self.service.events()
-                .list(
-                    calendarId=calendar_id,
-                    timeMin=time_min.astimezone(timezone.utc).isoformat(),
-                    timeMax=time_max.astimezone(timezone.utc).isoformat(),
-                    singleEvents=True,
-                    orderBy="startTime",
+            try:
+                events_result = (
+                    self.service.events()
+                    .list(
+                        calendarId=calendar_id,
+                        timeMin=time_min.astimezone(timezone.utc).isoformat(),
+                        timeMax=time_max.astimezone(timezone.utc).isoformat(),
+                        singleEvents=True,
+                        orderBy="startTime",
+                    )
+                    .execute()
                 )
-                .execute()
-            )
+            except HttpError as error:
+                if error.resp.status == 404:
+                    # Skip calendars that are not found or inaccessible instead of
+                    # propagating the error and crashing the bot.
+                    continue
+                raise
             for item in events_result.get("items", []):
                 start_info = item.get("start", {})
                 end_info = item.get("end", {})
