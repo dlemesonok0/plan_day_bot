@@ -1,4 +1,6 @@
 from functools import lru_cache
+from typing import List
+
 from pydantic import BaseSettings, Field
 
 
@@ -21,3 +23,9 @@ class Settings(BaseSettings):
 @lru_cache()
 def get_settings() -> Settings:
     return Settings()
+
+
+@lru_cache()
+def get_google_calendar_ids() -> List[str]:
+    raw_value = get_settings().google_calendar_id
+    return [item.strip() for item in raw_value.split(",") if item.strip()]

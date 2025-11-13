@@ -21,8 +21,8 @@ cp .env.example .env
 
 - `TELEGRAM_BOT_TOKEN` — токен Telegram-бота.
 - `TODOIST_API_TOKEN` — API токен Todoist.
-- `GOOGLE_SERVICE_ACCOUNT_INFO` — JSON c сервисным аккаунтом Google (одной строкой). Дайте сервисному аккаунту доступ к календарю.
-- `GOOGLE_CALENDAR_ID` — идентификатор календаря (например, `primary`).
+- `GOOGLE_SERVICE_ACCOUNT_INFO` — JSON c сервисным аккаунтом Google (одной строкой). Дайте сервисному аккаунту доступ к каждому календарю, который нужно учитывать в расписании.
+- `GOOGLE_CALENDAR_ID` — идентификатор одного или нескольких календарей (например, `primary` или `primary,team@example.com`).
 - `HUGGINGFACE_API_TOKEN` — токен доступа к Hugging Face Inference API.
 - `HUGGINGFACE_MODEL` — (необязательно) имя модели на Hugging Face, по умолчанию используется бесплатная `mistralai/Mistral-7B-Instruct-v0.2`.
 
@@ -30,8 +30,8 @@ cp .env.example .env
 
 - **TELEGRAM_BOT_TOKEN** — создайте бота у [@BotFather](https://t.me/BotFather) и скопируйте выданный токен.
 - **TODOIST_API_TOKEN** — в Todoist откройте *Интеграции → Разработчики → Токен API*.
-- **GOOGLE_SERVICE_ACCOUNT_INFO** — в Google Cloud Console создайте сервисный аккаунт, выдайте ему роль `Calendar Viewer`, создайте JSON ключ и сохраните содержимое файла в одну строку. Не забудьте предоставить аккаунту доступ к нужному календарю.
-- **GOOGLE_CALENDAR_ID** — `primary` для основного календаря или значение из настроек конкретного календаря.
+- **GOOGLE_SERVICE_ACCOUNT_INFO** — в Google Cloud Console включите Google Calendar API для проекта, создайте сервисный аккаунт (достаточно роли `Project → Viewer`), затем выпустите для него JSON-ключ и сохраните содержимое файла в одну строку. Поделитесь каждым нужным календарём с адресом сервисного аккаунта (например, с правами "Просмотр информации о событиях") через интерфейс Google Calendar.
+- **GOOGLE_CALENDAR_ID** — `primary` для основного календаря или значение из настроек конкретного календаря. Можно указать несколько идентификаторов через запятую, тогда бот объединит события из всех календарей.
 - **HUGGINGFACE_API_TOKEN** — заведите аккаунт на [Hugging Face](https://huggingface.co/), перейдите в *Settings → Access Tokens* и создайте токен с правами `Read`. Бесплатного тарифа достаточно для вызова публичных моделей.
 - **HUGGINGFACE_MODEL** — оставьте значение по умолчанию или укажите другую бесплатную модель, опубликованную на Hugging Face Inference API.
 

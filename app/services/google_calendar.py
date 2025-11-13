@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from typing import List
+from typing import Iterable, List
 
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
@@ -31,46 +31,49 @@ class CalendarEvent:
 
 
 class GoogleCalendarClient:
-    def __init__(self, *, service_account_info, calendar_id: str):
+    def __init__(self, *, service_account_info, calendar_ids: Iterable[str]):
         credentials = service_account.Credentials.from_service_account_info(
             service_account_info,
             scopes=["https://www.googleapis.com/auth/calendar.readonly"],
         )
         self.service = build("calendar", "v3", credentials=credentials, cache_discovery=False)
-        self.calendar_id = calendar_id
+        self.calendar_ids = [calendar_id for calendar_id in calendar_ids if calendar_id]
+        if not self.calendar_ids:
+            raise ValueError("At least one Google Calendar ID must be configured")
 
     def fetch_events(self, time_min: datetime, time_max: datetime) -> List[CalendarEvent]:
-        events_result = (
-            self.service.events()
-            .list(
-                calendarId=self.calendar_id,
-                timeMin=time_min.astimezone(timezone.utc).isoformat(),
-                timeMax=time_max.astimezone(timezone.utc).isoformat(),
-                singleEvents=True,
-                orderBy="startTime",
-            )
-            .execute()
-        )
-        events = []
-        for item in events_result.get("items", []):
-            start_info = item.get("start", {})
-            end_info = item.get("end", {})
-            start_str = start_info.get("dateTime") or start_info.get("date")
-            end_str = end_info.get("dateTime") or end_info.get("date")
-            if not start_str or not end_str:
-                continue
-            if len(start_str) == 10:
-                start_str += "T00:00:00+00:00"
-            if len(end_str) == 10:
-                end_str += "T23:59:00+00:00"
-            start = _parse_datetime(start_str)
-            end = _parse_datetime(end_str)
-            events.append(
-                CalendarEvent(
-                    event_id=item.get("id", ""),
-                    summary=item.get("summary", "Без названия"),
-                    start=start,
-                    end=end,
+        events: List[CalendarEvent] = []
+        for calendar_id in self.calendar_ids:
+            events_result = (
+                self.service.events()
+                .list(
+                    calendarId=calendar_id,
+                    timeMin=time_min.astimezone(timezone.utc).isoformat(),
+                    timeMax=time_max.astimezone(timezone.utc).isoformat(),
+                    singleEvents=True,
+                    orderBy="startTime",
                 )
+                .execute()
             )
-        return events
+            for item in events_result.get("items", []):
+                start_info = item.get("start", {})
+                end_info = item.get("end", {})
+                start_str = start_info.get("dateTime") or start_info.get("date")
+                end_str = end_info.get("dateTime") or end_info.get("date")
+                if not start_str or not end_str:
+                    continue
+                if len(start_str) == 10:
+                    start_str += "T00:00:00+00:00"
+                if len(end_str) == 10:
+                    end_str += "T23:59:00+00:00"
+                start = _parse_datetime(start_str)
+                end = _parse_datetime(end_str)
+                events.append(
+                    CalendarEvent(
+                        event_id=item.get("id", ""),
+                        summary=item.get("summary", "Без названия"),
+                        start=start,
+                        end=end,
+                    )
+                )
+        return sorted(events, key=lambda event: event.start)

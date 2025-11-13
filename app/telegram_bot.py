@@ -5,7 +5,7 @@ from typing import Dict, Optional
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
 
-from .config import Settings, get_settings
+from .config import Settings, get_google_calendar_ids, get_settings
 from .services.google_calendar import GoogleCalendarClient
 from .services.llm import HuggingFaceLLMClient
 from .services.plan_builder import PlanBuilder
@@ -50,9 +50,10 @@ async def handle_plan_command(
     if isinstance(service_account_info, str):
         service_account_info = json.loads(service_account_info)
 
+    calendar_ids = get_google_calendar_ids()
     calendar_client = GoogleCalendarClient(
         service_account_info=service_account_info,
-        calendar_id=settings.google_calendar_id,
+        calendar_ids=calendar_ids,
     )
     now = datetime.utcnow().replace(tzinfo=timezone.utc)
     events = [
