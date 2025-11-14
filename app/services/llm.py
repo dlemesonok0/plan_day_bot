@@ -2,21 +2,29 @@ from __future__ import annotations
 
 from typing import Optional
 import logging
+import asyncio
 
-import httpx
-
+from openai import OpenAI
+from openai import APIStatusError
 
 logger = logging.getLogger(__name__)
 
+
 class HuggingFaceLLMClient:
-    """Client for calling Hugging Face Inference API models."""
+    """Client for calling Hugging Face via OpenAI-compatible Router API."""
 
     def __init__(self, *, api_token: str, model: str, timeout: float = 40.0):
         self.api_token = api_token
         self.model = model
         self.timeout = timeout
-        self._url = f"https://api-inference.huggingface.co/models/{model}"
-        logger.debug("HuggingFaceLLMClient initialized for model=%s", model)
+
+        self._client = OpenAI(
+            base_url="https://router.huggingface.co/v1",
+            api_key=self.api_token,
+        )
+        logger.debug(
+            "HuggingFaceLLMClient (router) initialized for model=%s", self.model
+        )
 
     async def generate(
         self,
@@ -25,27 +33,32 @@ class HuggingFaceLLMClient:
         max_new_tokens: int = 700,
         temperature: float = 0.4,
     ) -> str:
-        headers = {
-            "Authorization": f"Bearer {self.api_token}",
-        }
-        payload = {
-            "inputs": prompt,
-            "parameters": {
-                "max_new_tokens": max_new_tokens,
-                "temperature": temperature,
-                "return_full_text": False,
-            },
-        }
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            logger.debug(
-                "Sending request to Hugging Face Inference API (model=%s)", self.model
+        """
+        Генерирует текст с помощью router.huggingface.co в OpenAI-формате.
+        Интерфейс сохранён таким же, как раньше.
+        """
+
+        logger.debug(
+            "Sending request to HF Router API (model=%s)", self.model
+        )
+
+        def _call_openai():
+            return self._client.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "user", "content": prompt}],
+                # max_tokens=max_new_tokens,
+                # temperature=temperature,
             )
-            response = await client.post(self._url, headers=headers, json=payload)
 
         try:
-            response.raise_for_status()
-        except httpx.HTTPStatusError as exc:
-            status_code = exc.response.status_code
+            completion = await asyncio.to_thread(_call_openai)
+        except APIStatusError as exc:
+            status_code = exc.status_code
+            logger.error(
+                "HF Router error status=%s details=%s",
+                status_code,
+                getattr(exc, "response", None),
+            )
             if status_code == 410:
                 raise ValueError(
                     (
@@ -54,19 +67,20 @@ class HuggingFaceLLMClient:
                     )
                 ) from exc
             raise
-
-        data = response.json()
+        except Exception as exc:
+            logger.exception("HF Router call failed")
+            raise
 
         generated: Optional[str] = None
-        if isinstance(data, list):
-            if data and isinstance(data[0], dict):
-                generated = data[0].get("generated_text")
-        elif isinstance(data, dict):
-            generated = data.get("generated_text")
+        if completion.choices:
+            msg = completion.choices[0].message
+            generated = msg.content
 
         if not generated:
-            raise ValueError("Empty response from Hugging Face Inference API")
+            raise ValueError("Empty response from Hugging Face Router API")
+
+        text = generated.strip()
         logger.debug(
-            "Received response from Hugging Face Inference API (length=%d)", len(generated)
+            "Received response from HF Router API (length=%d)", len(text)
         )
-        return generated.strip()
+        return text
